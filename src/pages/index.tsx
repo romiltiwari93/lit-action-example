@@ -11,6 +11,8 @@ import { PKPEthersWallet } from '@lit-protocol/pkp-ethers';
 import { IRelayPKP, AuthMethod } from '@lit-protocol/types';
 import { ethers } from 'ethers';
 import { SiweMessage } from 'siwe';
+import IpfsHash from 'ipfs-only-hash';
+import { LitContracts } from '@lit-protocol/contracts-sdk';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -151,7 +153,7 @@ export default function Home() {
       }
 
       const go = async () => {
-        // check if they're authenticated
+        // check if they're authenticated.  checkGoogleAuth will throw an error if they're not.
         const googleUserInfo = await checkGoogleAuth();
         console.log("Google user info: ", googleUserInfo);
         const googleUserId = googleUserInfo.sub;
@@ -164,15 +166,18 @@ export default function Home() {
         // check if they're authorized
         const isAuthorized = await Lit.Actions.isPermittedAuthMethod({tokenId: pkpTokenId, authMethodType: "6", userId: authMethodId})
         console.log("Is authorized: ", isAuthorized);
-        if! (isAuthorized) {
+        if (!isAuthorized) {
           Lit.Actions.setResponse({response: "Unauthorized"});
           return;
         }
-        Lit.Actions.setResponse({response: "Authorized"});
+        Lit.Actions.signEcdsa({publicKey: pkpPublicKey, toSign, sigName: 'sig1'})
       }
       go();
-
     `
+
+    const litActionHash = await IpfsHash.of(litActionCode);
+    const litContracts = new LitContracts();
+    const litActionHashAsBytes = litContracts.utils.getBytesFromMultihash(litActionHash);
 
     const provider = litAuthClient!.getProvider(
       ProviderType.Google
@@ -180,10 +185,10 @@ export default function Home() {
     const authMethodId = await provider.getAuthMethodId(resolvedAuthMethod!);
       const txHash = await provider.mintPKPThroughRelayer(resolvedAuthMethod!, {
     keyType: 2,
-    permittedAuthMethodTypes: [resolvedAuthMethod!.authMethodType],
-    permittedAuthMethodIds: [authMethodId],
-    permittedAuthMethodPubkeys: ['0x'],
-    permittedAuthMethodScopes: [[AuthMethodScope.SignAnything]],
+    permittedAuthMethodTypes: [resolvedAuthMethod!.authMethodType, 2],
+    permittedAuthMethodIds: [authMethodId, litActionHashAsBytes],
+    permittedAuthMethodPubkeys: ['0x', '0x'],
+    permittedAuthMethodScopes: [[AuthMethodScope.SignAnything], [AuthMethodScope.SignAnything]],
     addPkpEthAddressAsPermittedAddress: false,
     sendPkpToItself: false,
   });
@@ -209,11 +214,13 @@ export default function Home() {
       jsParams: {
         googleToken: resolvedAuthMethod!.accessToken,
         pkpTokenId: pkp.tokenId,
+        pkpPublicKey: pkp.publicKey,
+        toSign: ethers.utils.arrayify(ethers.utils.keccak256(ethers.utils.toUtf8Bytes('test'))),
       }
     });
     console.log('Lit action executed: ', resp);
-    
-
+    const sig = resp.signatures.sig1.signature;
+    console.log('Signature: ', sig);
   }
 
   return (
