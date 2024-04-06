@@ -60,18 +60,21 @@ export default function Home() {
 
   useEffect(() => {
     const go = async () => {
+      if (!litNodeClient) {
       const _litNodeClient = new LitNodeClient({
-        LIT_NETWORK,
+        litNetwork: LIT_NETWORK,
         debug: false,
       });
     
       await _litNodeClient.connect();
       setLitNodeClient(_litNodeClient);
       console.log('Lit Node Client connected')
+    }
     
+    if (!litAuthClient){
       const _litAuthClient = new LitAuthClient({
         litNodeClient,
-        litRelayConfig: { relayApiKey: LIT_RELAY_API_KEY },
+        litRelayConfig: { relayApiKey: LIT_RELAY_API_KEY, relayUrl: "https://manzano-relayer.getlit.dev" },
       });
       // Initialize Google provider
       _litAuthClient!.initProvider(ProviderType.Google, {
@@ -79,18 +82,19 @@ export default function Home() {
         redirectUri: GOOGLE_REDIRECT_URI,
       });
       setLitAuthClient(_litAuthClient);
-
+    
       // check if we are in the google redirect flow
-    // Check if app has been redirected from Lit login server
-    if (isSignInRedirect(GOOGLE_REDIRECT_URI)) {
-      // Get the provider that was used to sign in
-      const provider = _litAuthClient.getProvider(
-        ProviderType.Google,
-      )!;
-      // Get auth method object that has the OAuth token from redirect callback
-      const authMethod = await provider.authenticate();
-      setResolvedAuthMethod(authMethod);
+      // Check if app has been redirected from Lit login server
+      if (isSignInRedirect(GOOGLE_REDIRECT_URI)) {
+        // Get the provider that was used to sign in
+        const provider = _litAuthClient.getProvider(
+          ProviderType.Google,
+        )!;
+        // Get auth method object that has the OAuth token from redirect callback
+        const authMethod = await provider.authenticate();
+        setResolvedAuthMethod(authMethod);
 
+        }
       }
     }
     go();
@@ -155,9 +159,10 @@ export default function Home() {
         const authMethodId = ethers.utils.arrayify(ethers.utils.keccak256(
           ethers.utils.toUtf8Bytes(googleUserId + ":" + googleAppId)
         ));
+        console.log('authMethodId: ', authMethodId);
           
         // check if they're authorized
-        const isAuthorized = await Lit.Actions.isPermittedAuthMethod({tokenId: pkpTokenId, authMethodType: 6, authMethodId})
+        const isAuthorized = await Lit.Actions.isPermittedAuthMethod({tokenId: pkpTokenId, authMethodType: "6", userId: authMethodId})
         console.log("Is authorized: ", isAuthorized);
       }
       go();
@@ -188,6 +193,8 @@ export default function Home() {
     publicKey: res.pkpPublicKey,
     ethAddress: res.pkpEthAddress,
   };
+
+  console.log('PKP minted: ', pkp);
 
     const authSig = await getAuthSig();
 
