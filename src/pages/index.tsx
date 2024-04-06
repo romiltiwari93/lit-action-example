@@ -3,22 +3,26 @@ import Image from "next/image";
 import { Inter } from "next/font/google";
 import styles from "@/styles/Home.module.css";
 import { useEffect, useState } from "react";
-import { LitAbility, LitPKPResource } from '@lit-protocol/auth-helpers';
-import { ProviderType, AuthMethodScope } from '@lit-protocol/constants';
-import { GoogleProvider, LitAuthClient, isSignInRedirect } from '@lit-protocol/lit-auth-client';
-import { LitNodeClient } from '@lit-protocol/lit-node-client';
-import { PKPEthersWallet } from '@lit-protocol/pkp-ethers';
-import { IRelayPKP, AuthMethod } from '@lit-protocol/types';
-import { ethers } from 'ethers';
-import { SiweMessage } from 'siwe';
-import IpfsHash from 'ipfs-only-hash';
-import { LitContracts } from '@lit-protocol/contracts-sdk';
+import { LitAbility, LitPKPResource } from "@lit-protocol/auth-helpers";
+import { ProviderType, AuthMethodScope } from "@lit-protocol/constants";
+import {
+  GoogleProvider,
+  LitAuthClient,
+  isSignInRedirect,
+} from "@lit-protocol/lit-auth-client";
+import { LitNodeClient } from "@lit-protocol/lit-node-client";
+import { PKPEthersWallet } from "@lit-protocol/pkp-ethers";
+import { IRelayPKP, AuthMethod } from "@lit-protocol/types";
+import { ethers } from "ethers";
+import { SiweMessage } from "siwe";
+import IpfsHash from "ipfs-only-hash";
+import { LitContracts } from "@lit-protocol/contracts-sdk";
 
 const inter = Inter({ subsets: ["latin"] });
 
-
 const getAuthSig = async () => {
-  const privateKey = process.env.NEXT_PUBLIC_LIT_ROLLUP_MAINNET_DEPLOYER_PRIVATE_KEY!;
+  const privateKey =
+    process.env.NEXT_PUBLIC_LIT_ROLLUP_MAINNET_DEPLOYER_PRIVATE_KEY!;
   const wallet = new ethers.Wallet(privateKey);
   const address = await wallet.getAddress();
 
@@ -51,64 +55,82 @@ const getAuthSig = async () => {
   return authSig;
 };
 
-const LIT_NETWORK = 'manzano';
+const LIT_NETWORK = "manzano";
 const LIT_RELAY_API_KEY = "test_its_chris";
-const GOOGLE_REDIRECT_URI = 'http://localhost:3000';
+const GOOGLE_REDIRECT_URI = "http://localhost:3000";
 
 export default function Home() {
-  const [litNodeClient, setLitNodeClient] = useState<LitNodeClient | null>(null);
-  const [litAuthClient, setLitAuthClient] = useState<LitAuthClient | null>(null);
-  const [resolvedAuthMethod, setResolvedAuthMethod] = useState<AuthMethod | null>(null);
+  const [litNodeClient, setLitNodeClient] = useState<LitNodeClient | null>(
+    null
+  );
+  const [litAuthClient, setLitAuthClient] = useState<LitAuthClient | null>(
+    null
+  );
+  const [resolvedAuthMethod, setResolvedAuthMethod] =
+    useState<AuthMethod | null>(null);
 
   useEffect(() => {
     const go = async () => {
       if (!litNodeClient) {
-      const _litNodeClient = new LitNodeClient({
-        litNetwork: LIT_NETWORK,
-        debug: false,
-      });
-    
-      await _litNodeClient.connect();
-      setLitNodeClient(_litNodeClient);
-      console.log('Lit Node Client connected')
-    }
-    
-    if (!litAuthClient){
-      const _litAuthClient = new LitAuthClient({
-        litNodeClient,
-        litRelayConfig: { relayApiKey: LIT_RELAY_API_KEY, relayUrl: "https://manzano-relayer.getlit.dev" },
-      });
-      // Initialize Google provider
-      _litAuthClient!.initProvider(ProviderType.Google, {
-        // The URL of your web app where users will be redirected after authentication
-        redirectUri: GOOGLE_REDIRECT_URI,
-      });
-      setLitAuthClient(_litAuthClient);
-    
-      // check if we are in the google redirect flow
-      // Check if app has been redirected from Lit login server
-      if (isSignInRedirect(GOOGLE_REDIRECT_URI)) {
-        // Get the provider that was used to sign in
-        const provider = _litAuthClient.getProvider(
-          ProviderType.Google,
-        )!;
-        // Get auth method object that has the OAuth token from redirect callback
-        const authMethod = await provider.authenticate();
-        setResolvedAuthMethod(authMethod);
+        const _litNodeClient = new LitNodeClient({
+          litNetwork: LIT_NETWORK,
+          debug: false,
+        });
 
+        await _litNodeClient.connect();
+        setLitNodeClient(_litNodeClient);
+        console.log("Lit Node Client connected");
+      }
+
+      if (!litAuthClient) {
+        const _litAuthClient = new LitAuthClient({
+          litNodeClient,
+          litRelayConfig: {
+            relayApiKey: LIT_RELAY_API_KEY,
+            relayUrl: "https://manzano-relayer.getlit.dev",
+          },
+        });
+        // Initialize Google provider
+        _litAuthClient!.initProvider(ProviderType.Google, {
+          // The URL of your web app where users will be redirected after authentication
+          redirectUri: GOOGLE_REDIRECT_URI,
+        });
+        setLitAuthClient(_litAuthClient);
+
+        // check if we are in the google redirect flow
+        // Check if app has been redirected from Lit login server
+        if (isSignInRedirect(GOOGLE_REDIRECT_URI)) {
+          // Get the provider that was used to sign in
+          const provider = _litAuthClient.getProvider(ProviderType.Google)!;
+          // Get auth method object that has the OAuth token from redirect callback
+          const authMethod = await provider.authenticate();
+          setResolvedAuthMethod(authMethod);
         }
       }
-    }
+    };
     go();
-    
-}, []);
+  }, []);
+
+  const getCapacityCreditDelegationSig = async () => {
+    const privateKey =
+      process.env.NEXT_PUBLIC_LIT_ROLLUP_MAINNET_DEPLOYER_PRIVATE_KEY!;
+    const capacityCreditsWallet = new ethers.Wallet(privateKey);
+
+    const capacityCreditsRes =
+      await litNodeClient!.createCapacityDelegationAuthSig({
+        dAppOwnerWallet: capacityCreditsWallet,
+        uses: "100",
+      });
+
+    return capacityCreditsRes.capacityDelegationAuthSig;
+  };
 
   const signInToGoogle = async () => {
     const provider = litAuthClient!.getProvider(
       ProviderType.Google
     )! as GoogleProvider;
     await provider.signIn();
-  }
+  };
 
   const mintPKPAndSign = async () => {
     const litActionCode = `
@@ -173,38 +195,42 @@ export default function Home() {
         Lit.Actions.signEcdsa({publicKey: pkpPublicKey, toSign, sigName: 'sig1'})
       }
       go();
-    `
+    `;
 
     const litActionHash = await IpfsHash.of(litActionCode);
     const litContracts = new LitContracts();
-    const litActionHashAsBytes = litContracts.utils.getBytesFromMultihash(litActionHash);
+    const litActionHashAsBytes =
+      litContracts.utils.getBytesFromMultihash(litActionHash);
 
     const provider = litAuthClient!.getProvider(
       ProviderType.Google
     )! as GoogleProvider;
     const authMethodId = await provider.getAuthMethodId(resolvedAuthMethod!);
-      const txHash = await provider.mintPKPThroughRelayer(resolvedAuthMethod!, {
-    keyType: 2,
-    permittedAuthMethodTypes: [resolvedAuthMethod!.authMethodType, 2],
-    permittedAuthMethodIds: [authMethodId, litActionHashAsBytes],
-    permittedAuthMethodPubkeys: ['0x', '0x'],
-    permittedAuthMethodScopes: [[AuthMethodScope.SignAnything], [AuthMethodScope.SignAnything]],
-    addPkpEthAddressAsPermittedAddress: false,
-    sendPkpToItself: false,
-  });
+    const txHash = await provider.mintPKPThroughRelayer(resolvedAuthMethod!, {
+      keyType: 2,
+      permittedAuthMethodTypes: [resolvedAuthMethod!.authMethodType, 2],
+      permittedAuthMethodIds: [authMethodId, litActionHashAsBytes],
+      permittedAuthMethodPubkeys: ["0x", "0x"],
+      permittedAuthMethodScopes: [
+        [AuthMethodScope.SignAnything],
+        [AuthMethodScope.SignAnything],
+      ],
+      addPkpEthAddressAsPermittedAddress: true,
+      sendPkpToItself: false,
+    });
 
-  const res = await provider.relay.pollRequestUntilTerminalState(txHash);
+    const res = await provider.relay.pollRequestUntilTerminalState(txHash);
 
-  if (!res.pkpTokenId || !res.pkpPublicKey || !res.pkpEthAddress)
-    throw new Error('Mint PKP fail');
+    if (!res.pkpTokenId || !res.pkpPublicKey || !res.pkpEthAddress)
+      throw new Error("Mint PKP fail");
 
-  const pkp: IRelayPKP = {
-    tokenId: res.pkpTokenId,
-    publicKey: res.pkpPublicKey,
-    ethAddress: res.pkpEthAddress,
-  };
+    const pkp: IRelayPKP = {
+      tokenId: res.pkpTokenId,
+      publicKey: res.pkpPublicKey,
+      ethAddress: res.pkpEthAddress,
+    };
 
-  console.log('PKP minted: ', pkp);
+    console.log("PKP minted: ", pkp);
 
     const authSig = await getAuthSig();
 
@@ -215,13 +241,15 @@ export default function Home() {
         googleToken: resolvedAuthMethod!.accessToken,
         pkpTokenId: pkp.tokenId,
         pkpPublicKey: pkp.publicKey,
-        toSign: ethers.utils.arrayify(ethers.utils.keccak256(ethers.utils.toUtf8Bytes('test'))),
-      }
+        toSign: ethers.utils.arrayify(
+          ethers.utils.keccak256(ethers.utils.toUtf8Bytes("test"))
+        ),
+      },
     });
-    console.log('Lit action executed: ', resp);
+    console.log("Lit action executed: ", resp);
     const sig = resp.signatures.sig1.signature;
-    console.log('Signature: ', sig);
-  }
+    console.log("Signature: ", sig);
+  };
 
   return (
     <>
@@ -234,9 +262,12 @@ export default function Home() {
       <main className={`${styles.main} ${inter.className}`}>
         <div>
           <button onClick={signInToGoogle}>Sign in to Google</button>
-          <br/>
-          <br/>
-          <div style={{maxWidth: '500px'}}>Auth method present: {resolvedAuthMethod ? JSON.stringify(resolvedAuthMethod) : 'None'}</div>
+          <br />
+          <br />
+          <div style={{ maxWidth: "500px" }}>
+            Auth method present:{" "}
+            {resolvedAuthMethod ? JSON.stringify(resolvedAuthMethod) : "None"}
+          </div>
           <button onClick={mintPKPAndSign}>Mint PKP and Sign</button>
         </div>
       </main>
