@@ -164,6 +164,11 @@ export default function Home() {
         // check if they're authorized
         const isAuthorized = await Lit.Actions.isPermittedAuthMethod({tokenId: pkpTokenId, authMethodType: "6", userId: authMethodId})
         console.log("Is authorized: ", isAuthorized);
+        if! (isAuthorized) {
+          Lit.Actions.setResponse({response: "Unauthorized"});
+          return;
+        }
+        Lit.Actions.setResponse({response: "Authorized"});
       }
       go();
 
