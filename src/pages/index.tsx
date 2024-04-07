@@ -3,7 +3,12 @@ import Image from "next/image";
 import { Inter } from "next/font/google";
 import styles from "@/styles/Home.module.css";
 import { useEffect, useState } from "react";
-import { LitAbility, LitPKPResource } from "@lit-protocol/auth-helpers";
+import {
+  LitAbility,
+  LitPKPResource,
+  LitActionResource,
+  RecapSessionCapabilityObject,
+} from "@lit-protocol/auth-helpers";
 import { ProviderType, AuthMethodScope } from "@lit-protocol/constants";
 import {
   GoogleProvider,
@@ -20,7 +25,7 @@ import { LitContracts } from "@lit-protocol/contracts-sdk";
 
 const inter = Inter({ subsets: ["latin"] });
 
-const getAuthSig = async () => {
+const getAuthSig = async (pkpPublicKey: string) => {
   const privateKey =
     process.env.NEXT_PUBLIC_LIT_ROLLUP_MAINNET_DEPLOYER_PRIVATE_KEY!;
   const wallet = new ethers.Wallet(privateKey);
@@ -31,7 +36,7 @@ const getAuthSig = async () => {
   const origin = "https://localhost/login";
   const statement =
     "This is a test statement.  You can put anything you want here.";
-  const siweMessage = new SiweMessage({
+  let siweMessage = new SiweMessage({
     domain,
     address: address,
     statement,
@@ -40,6 +45,15 @@ const getAuthSig = async () => {
     chainId: 1,
     expirationTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   });
+
+  const sessionCapabilityObject = new RecapSessionCapabilityObject({}, []);
+  const litPkpResource = new LitPKPResource(pkpPublicKey);
+  sessionCapabilityObject.addCapabilityForResource(
+    litPkpResource,
+    LitAbility.PKPSigning
+  );
+  siweMessage = sessionCapabilityObject.addToSiweMessage(siweMessage);
+
   const messageToSign = siweMessage.prepareMessage();
 
   // Sign the message and format the authSig
@@ -111,19 +125,19 @@ export default function Home() {
     go();
   }, []);
 
-  const getCapacityCreditDelegationSig = async () => {
-    const privateKey =
-      process.env.NEXT_PUBLIC_LIT_ROLLUP_MAINNET_DEPLOYER_PRIVATE_KEY!;
-    const capacityCreditsWallet = new ethers.Wallet(privateKey);
+  // const getCapacityCreditDelegationSig = async () => {
+  //   const privateKey =
+  //     process.env.NEXT_PUBLIC_LIT_ROLLUP_MAINNET_DEPLOYER_PRIVATE_KEY!;
+  //   const capacityCreditsWallet = new ethers.Wallet(privateKey);
 
-    const capacityCreditsRes =
-      await litNodeClient!.createCapacityDelegationAuthSig({
-        dAppOwnerWallet: capacityCreditsWallet,
-        uses: "100",
-      });
+  //   const capacityCreditsRes =
+  //     await litNodeClient!.createCapacityDelegationAuthSig({
+  //       dAppOwnerWallet: capacityCreditsWallet,
+  //       uses: "100",
+  //     });
 
-    return capacityCreditsRes.capacityDelegationAuthSig;
-  };
+  //   return capacityCreditsRes.capacityDelegationAuthSig;
+  // };
 
   const signInToGoogle = async () => {
     const provider = litAuthClient!.getProvider(
@@ -232,7 +246,8 @@ export default function Home() {
 
     console.log("PKP minted: ", pkp);
 
-    const authSig = await getAuthSig();
+    // this auth sig is only used for rate limiting.  it must hold rate limit NFTs
+    const authSig = await getAuthSig(pkp.publicKey);
 
     const resp = await litNodeClient!.executeJs({
       authSig,
