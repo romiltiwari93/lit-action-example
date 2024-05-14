@@ -1,13 +1,12 @@
 import Head from "next/head";
-import Image from "next/image";
 import { Inter } from "next/font/google";
 import styles from "@/styles/Home.module.css";
 import { useEffect, useState } from "react";
 import {
   LitAbility,
   LitPKPResource,
-  LitActionResource,
   RecapSessionCapabilityObject,
+  newSessionCapabilityObject,
 } from "@lit-protocol/auth-helpers";
 import { ProviderType, AuthMethodScope } from "@lit-protocol/constants";
 import {
@@ -16,12 +15,13 @@ import {
   isSignInRedirect,
 } from "@lit-protocol/lit-auth-client";
 import { LitNodeClient } from "@lit-protocol/lit-node-client";
-import { PKPEthersWallet } from "@lit-protocol/pkp-ethers";
 import { IRelayPKP, AuthMethod } from "@lit-protocol/types";
 import { ethers } from "ethers";
 import { SiweMessage } from "siwe";
 import IpfsHash from "ipfs-only-hash";
 import { LitContracts } from "@lit-protocol/contracts-sdk";
+import { computeAddress } from "ethers/lib/utils";
+import { AuthCallbackParams } from "@lit-protocol/types";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -69,6 +69,61 @@ const getAuthSig = async (pkpPublicKey: string) => {
   return authSig;
 };
 
+const getSessionSigs = async (
+  pkpPublicKey: string,
+  litNodeClient: LitNodeClient,
+  authMethodId: number,
+  accessToken: string
+) => {
+  //get capacity delegation auth sig to facilitate signing from nodes
+  const ethAddress = computeAddress(pkpPublicKey);
+  /* const capacityDelegationAuthSig =
+    await getCapacityDelegationAuthSig(ethAddress); */
+  const sessionKeyPair = litNodeClient.getSessionKey();
+
+  //AuthSig Callback
+  const authNeededCallback = async (params: AuthCallbackParams) => {
+    const response = await litNodeClient.signSessionKey({
+      sessionKey: sessionKeyPair,
+      authMethods: [
+        {
+          authMethodType: authMethodId,
+          accessToken,
+        },
+      ],
+      pkpPublicKey: pkpPublicKey,
+      expiration: params.expiration,
+      resources: params.resources,
+      chainId: 1,
+    });
+    return response.authSig;
+  };
+
+  //SIWE ReCap Object
+  const sessionCapabilityObject = newSessionCapabilityObject();
+  const litPkpResource = new LitPKPResource(pkpPublicKey);
+  sessionCapabilityObject.addCapabilityForResource(
+    litPkpResource,
+    LitAbility.PKPSigning
+  );
+
+  //Generate session signatures
+  const sessionSigs = await litNodeClient.getSessionSigs({
+    chain: "ethereum",
+    expiration: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+    resourceAbilityRequests: [
+      {
+        resource: litPkpResource,
+        ability: LitAbility.PKPSigning,
+      },
+    ],
+    sessionKey: sessionKeyPair,
+    authNeededCallback,
+    sessionCapabilityObject,
+  });
+  return sessionSigs;
+};
+
 const LIT_NETWORK = "manzano";
 const LIT_RELAY_API_KEY = "test_its_chris";
 const GOOGLE_REDIRECT_URI = "http://localhost:3000";
@@ -88,7 +143,7 @@ export default function Home() {
       if (!litNodeClient) {
         const _litNodeClient = new LitNodeClient({
           litNetwork: LIT_NETWORK,
-          debug: false,
+          debug: true,
         });
 
         await _litNodeClient.connect();
@@ -118,6 +173,8 @@ export default function Home() {
           const provider = _litAuthClient.getProvider(ProviderType.Google)!;
           // Get auth method object that has the OAuth token from redirect callback
           const authMethod = await provider.authenticate();
+          console.log("Auth method resolved: ", authMethod);
+          console.log("Access token: ", authMethod.accessToken);
           setResolvedAuthMethod(authMethod);
         }
       }
@@ -198,9 +255,8 @@ export default function Home() {
           ethers.utils.toUtf8Bytes(googleUserId + ":" + googleAppId)
         ));
         console.log('authMethodId: ', authMethodId);
-          
         // check if they're authorized
-        const isAuthorized = await Lit.Actions.isPermittedAuthMethod({tokenId: pkpTokenId, authMethodType: "6", userId: authMethodId})
+        const isAuthorized = await Lit.Actions.isPermittedAuthMethod({tokenId: pkpTokenId, authMethodType: "854321", userId: authMethodId})
         console.log("Is authorized: ", isAuthorized);
         if (!isAuthorized) {
           Lit.Actions.setResponse({response: "Unauthorized"});
@@ -222,7 +278,7 @@ export default function Home() {
     const authMethodId = await provider.getAuthMethodId(resolvedAuthMethod!);
     const txHash = await provider.mintPKPThroughRelayer(resolvedAuthMethod!, {
       keyType: 2,
-      permittedAuthMethodTypes: [resolvedAuthMethod!.authMethodType, 2],
+      permittedAuthMethodTypes: [854321, 2],
       permittedAuthMethodIds: [authMethodId, litActionHashAsBytes],
       permittedAuthMethodPubkeys: ["0x", "0x"],
       permittedAuthMethodScopes: [
@@ -230,7 +286,7 @@ export default function Home() {
         [AuthMethodScope.SignAnything],
       ],
       addPkpEthAddressAsPermittedAddress: true,
-      sendPkpToItself: false,
+      sendPkpToItself: true,
     });
 
     const res = await provider.relay.pollRequestUntilTerminalState(txHash);
@@ -247,10 +303,16 @@ export default function Home() {
     console.log("PKP minted: ", pkp);
 
     // this auth sig is only used for rate limiting.  it must hold rate limit NFTs
-    const authSig = await getAuthSig(pkp.publicKey);
+    //const authSig = await getAuthSig(pkp.publicKey);
+    const sessionSigs = await getSessionSigs(
+      pkp.publicKey,
+      litNodeClient!,
+      854321,
+      resolvedAuthMethod!.accessToken
+    );
 
     const resp = await litNodeClient!.executeJs({
-      authSig,
+      sessionSigs,
       code: litActionCode,
       jsParams: {
         googleToken: resolvedAuthMethod!.accessToken,
